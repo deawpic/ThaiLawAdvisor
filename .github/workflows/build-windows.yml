@@ -24,8 +24,8 @@ jobs:
       - name: Build Windows Executable
         run: flutter build windows --release
 
-      - name: Upload Artifact
-        uses: actions/artifacts@v4
+    - name: Upload Artifact
+        uses: actions/upload-artifact@v4  # <--- เปลี่ยนเป็นอันนี้ครับ
         with:
           name: windows-release-app
-          path: build/windows/x64/runner/Release/ # นำไฟล์ทั้งหมดในโฟลเดอร์นี้มาให้ดาวน์โหลด
+          path: build/windows/x64/runner/Release/
