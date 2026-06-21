@@ -1,0 +1,31 @@
+name: Build Windows Application
+on:
+  push:
+    branches: [ main, master ] # ทำงานเมื่อคุณ push โค้ดเข้า branch main หรือ master
+
+jobs:
+  build:
+    runs-on: windows-latest # สั่งให้รันบนเซิร์ฟเวอร์ Windows ของ GitHub
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable' # ใช้ Flutter เวอร์ชันเสถียรล่าสุด
+
+      - name: Enable Windows Build
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Windows Executable
+        run: flutter build windows --release
+
+      - name: Upload Artifact
+        uses: actions/artifacts@v4
+        with:
+          name: windows-release-app
+          path: build/windows/x64/runner/Release/ # นำไฟล์ทั้งหมดในโฟลเดอร์นี้มาให้ดาวน์โหลด
