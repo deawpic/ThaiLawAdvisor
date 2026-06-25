@@ -39,6 +39,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _apiKeyController.text = storedKey;
         _maskedKey = _maskApiKey(storedKey);
         _isEditingKey = false;
+        await GeminiService.fetchAvailableModels();
       } else {
         _isEditingKey = true;
       }
@@ -75,10 +76,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     try {
+      setState(() {
+        _isLoading = true;
+      });
       await StorageService.saveApiKey(keyToSave);
+      await GeminiService.fetchAvailableModels();
       setState(() {
         _maskedKey = _maskApiKey(keyToSave);
         _isEditingKey = false;
+        _isLoading = false;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -86,6 +92,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('ไม่สามารถบันทึก API Key ได้')),
@@ -187,10 +196,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        return Padding(
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(
@@ -222,24 +235,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const Divider(height: 1),
-              ...GeminiService.supportedModels.map((model) {
-                final isSelected = _selectedModel == model.id;
-                return ListTile(
-                  title: Text(
-                    model.label,
-                    style: TextStyle(
-                      color: textColor,
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: GeminiService.supportedModels.map((model) {
+                      final isSelected = _selectedModel == model.id;
+                      return ListTile(
+                        title: Text(
+                          model.label,
+                          style: TextStyle(
+                            color: textColor,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(Icons.check, color: Theme.of(context).primaryColor)
+                            : null,
+                        onTap: () => _handleSelectModel(model.id),
+                      );
+                    }).toList(),
                   ),
-                  trailing: isSelected
-                      ? Icon(Icons.check, color: Theme.of(context).primaryColor)
-                      : null,
-                  onTap: () => _handleSelectModel(model.id),
-                );
-              }),
+                ),
+              ),
             ],
           ),
         );

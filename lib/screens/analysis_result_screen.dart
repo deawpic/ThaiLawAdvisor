@@ -6,6 +6,7 @@ import 'package:flutter_lucide/flutter_lucide.dart';
 import '../constants/theme.dart';
 import '../models/history_record.dart';
 import '../services/database_service.dart';
+import '../services/report_service.dart';
 
 
 
@@ -24,6 +25,7 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen>
 
   String _activeTab = 'interactive'; // 'interactive' or 'markdown'
   bool _showSituation = false;
+  double _fontSize = 15.0;
 
   @override
   void initState() {
@@ -61,13 +63,170 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen>
     }
   }
 
-  void _handleShare() async {
+  void _handleShare() {
     if (_record == null) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? AppColors.darkText : AppColors.lightText;
+    final cardColor = isDark ? AppColors.darkCard : AppColors.lightCard;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'แชร์รายงานผลวิเคราะห์',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: textColor,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ListTile(
+                leading: const Icon(Icons.article, color: Colors.teal),
+                title: Text('บันทึกเป็นไฟล์ข้อความ (.txt)', style: TextStyle(color: textColor)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareTxt();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+                title: Text('ส่งออกเป็นรายงาน PDF', style: TextStyle(color: textColor)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _sharePdf();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share, color: Colors.blue),
+                title: Text('แชร์ไปยังแอปอื่น (ข้อความ)', style: TextStyle(color: textColor)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareToOtherApps();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _shareToOtherApps() async {
     final message =
         '[ผลวิเคราะห์กฎหมายไทยโดย AI]\n\nสถานการณ์:\n${_record!.situation}\n\nบทวิเคราะห์:\n${_record!.analysisResult}';
     await SharePlus.instance.share(
       ShareParams(text: message, title: 'ผลวิเคราะห์กฎหมายไทยโดย AI'),
     );
+  }
+
+  void _shareTxt() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('กำลังสร้างไฟล์ข้อความ (.txt)...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await ReportService.shareAsTxt(_record!);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      final errorStr = e.toString();
+      if (errorStr.contains('SAVED_TO_DOWNLOADS|')) {
+        final path = errorStr.split('|')[1];
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('บันทึกไฟล์ข้อความเรียบร้อยแล้วที่: $path'),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      } else if (errorStr.contains('CANCELLED')) {
+        // User cancelled
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('เกิดข้อผิดพลาดในการสร้างไฟล์ข้อความ: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  void _sharePdf() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('กำลังสร้างไฟล์ PDF และดาวน์โหลดฟอนต์...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await ReportService.shareAsPdf(_record!);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      final errorStr = e.toString();
+      if (errorStr.contains('SAVED_TO_DOWNLOADS|')) {
+        final path = errorStr.split('|')[1];
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('บันทึกรายงาน PDF เรียบร้อยแล้วที่: $path'),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      } else if (errorStr.contains('CANCELLED')) {
+        // User cancelled
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF: $e')),
+          );
+        }
+      }
+    }
   }
 
   void _handleDelete() {
@@ -124,6 +283,23 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen>
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.format_size, color: Colors.white),
+            tooltip: 'ปรับขนาดอักษร',
+            onPressed: () {
+              setState(() {
+                if (_fontSize == 15.0) {
+                  _fontSize = 18.0;
+                } else if (_fontSize == 18.0) {
+                  _fontSize = 21.0;
+                } else if (_fontSize == 21.0) {
+                  _fontSize = 13.0;
+                } else {
+                  _fontSize = 15.0;
+                }
+              });
+            },
+          ),
           IconButton(
             icon: const Icon(LucideIcons.copy, color: Colors.white),
             onPressed: _handleCopyToClipboard,
@@ -306,7 +482,7 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen>
                           const Divider(height: 1, thickness: 0.5),
                           const SizedBox(height: 10),
                           Text(
-                            'วิเคราะห์เมื่อ: ${_record!.timestamp} | ด้วย ${_record!.selectedModel.replaceAll('gemini-', 'Gemini ')}',
+                            'วิเคราะห์เมื่อ: ${_record!.timestamp} | ด้วย ${_record!.selectedModel.replaceAll('gemini-', 'Gemini ')}${_record!.totalTokens > 0 ? ' | ใช้โทเคนทั้งหมด: ${_record!.totalTokens} (Input: ${_record!.promptTokens}, Output: ${_record!.candidateTokens})' : ''}',
                             style: TextStyle(
                               fontSize: 11,
                               color: textSecondary,
@@ -495,25 +671,26 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen>
                                 ).copyWith(
                                   p: TextStyle(
                                     color: textColor,
-                                    fontSize: 15,
+                                    fontSize: _fontSize,
                                     height: 1.5,
                                   ),
                                   strong: TextStyle(
                                     color: textColor,
                                     fontWeight: FontWeight.bold,
+                                    fontSize: _fontSize,
                                   ),
                                   listBullet: TextStyle(
                                     color: textColor,
-                                    fontSize: 15,
+                                    fontSize: _fontSize,
                                   ),
                                   h1: TextStyle(
                                     color: primaryColor,
-                                    fontSize: 19,
+                                    fontSize: _fontSize + 4.0,
                                     fontWeight: FontWeight.bold,
                                   ),
                                   h2: TextStyle(
                                     color: secondaryColor,
-                                    fontSize: 17,
+                                    fontSize: _fontSize + 2.0,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),

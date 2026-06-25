@@ -53,6 +53,4 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_keySelectedModel) ?? 'gemini-3.5-flash';
   }
-
-
 }

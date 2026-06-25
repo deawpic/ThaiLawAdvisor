@@ -19,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<HistoryRecord> _history = [];
   String _searchQuery = '';
   bool _hasApiKey = true;
+  int _totalTokens = 0;
 
   @override
   void initState() {
@@ -29,9 +30,16 @@ class _HomeScreenState extends State<HomeScreen> {
   void _loadData() async {
     final records = DatabaseService.getAllHistory();
     final key = await StorageService.getApiKey();
+    
+    int total = 0;
+    for (var r in records) {
+      total += r.totalTokens;
+    }
+
     setState(() {
       _history = records;
       _hasApiKey = key != null && key.isNotEmpty;
+      _totalTokens = total;
     });
   }
 
@@ -377,12 +385,23 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_history.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'ประวัติการวิเคราะห์ทั้งหมด: ${_history.length} รายการ',
-                  style: TextStyle(color: textSecondary, fontSize: 13),
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'ประวัติการวิเคราะห์ทั้งหมด: ${_history.length} รายการ',
+                    style: TextStyle(color: textSecondary, fontSize: 13),
+                  ),
+                  if (_totalTokens > 0)
+                    Text(
+                      'ใช้โทเคนสะสม: $_totalTokens',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
               ),
             ),
 
@@ -661,10 +680,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           const SizedBox(width: 4),
                                           Flexible(
                                             child: Text(
-                                              item.selectedModel.replaceAll(
-                                                'gemini-',
-                                                'Gemini ',
-                                              ),
+                                              '${item.selectedModel.replaceAll('gemini-', 'Gemini ')}${item.totalTokens > 0 ? ' (${item.totalTokens} tkn)' : ''}',
                                               overflow: TextOverflow.ellipsis,
                                               maxLines: 1,
                                               style: TextStyle(

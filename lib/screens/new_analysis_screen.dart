@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
+import 'package:http/http.dart' as http;
 import '../constants/theme.dart';
 import '../models/history_record.dart';
 import '../services/database_service.dart';
@@ -36,6 +37,7 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
   int _loadingStep = 0;
   bool _hasApiKey = false;
   Timer? _loadingTimer;
+  http.Client? _activeClient;
 
   static const List<SuggestionItem> _suggestions = [
     SuggestionItem(
@@ -85,6 +87,7 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
 
   @override
   void dispose() {
+    _activeClient?.close();
     _loadingTimer?.cancel();
     _controller.dispose();
     super.dispose();
@@ -92,6 +95,9 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
 
   void _checkSetup() async {
     final key = await StorageService.getApiKey();
+    if (key != null && key.isNotEmpty) {
+      await GeminiService.fetchAvailableModels();
+    }
     final modelName = await StorageService.getSelectedModel();
     setState(() {
       _hasApiKey = key != null && key.isNotEmpty;
@@ -111,10 +117,14 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        return Padding(
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.6,
+          ),
           padding: const EdgeInsets.symmetric(vertical: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(
@@ -146,29 +156,35 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
                 ),
               ),
               const Divider(height: 1),
-              ...GeminiService.supportedModels.map((model) {
-                final isSelected = _model == model.id;
-                return ListTile(
-                  title: Text(
-                    model.label,
-                    style: TextStyle(
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      color: isSelected
-                          ? Theme.of(context).primaryColor
-                          : textColor,
-                    ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: GeminiService.supportedModels.map((model) {
+                      final isSelected = _model == model.id;
+                      return ListTile(
+                        title: Text(
+                          model.label,
+                          style: TextStyle(
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: isSelected
+                                ? Theme.of(context).primaryColor
+                                : textColor,
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(
+                                Icons.check_circle,
+                                color: Theme.of(context).primaryColor,
+                              )
+                            : null,
+                        onTap: () => _handleSelectModel(model.id),
+                      );
+                    }).toList(),
                   ),
-                  trailing: isSelected
-                      ? Icon(
-                          Icons.check_circle,
-                          color: Theme.of(context).primaryColor,
-                        )
-                      : null,
-                  onTap: () => _handleSelectModel(model.id),
-                );
-              }),
+                ),
+              ),
             ],
           ),
         );
@@ -202,7 +218,7 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
     _loadingTimer = null;
   }
 
-  void _handleStartAnalysis() async {
+  void _onAnalyzePressed() {
     if (_situation.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -243,17 +259,42 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
       return;
     }
 
+    if (_activeClient != null) {
+      debugPrint('Aborting previous pending Gemini request...');
+      _activeClient?.close();
+      _activeClient = null;
+      _stopLoadingTimer();
+      setState(() {
+        _isLoading = false;
+      });
+    }
+
+    _handleStartAnalysis();
+  }
+
+  void _handleStartAnalysis() async {
     FocusScope.of(context).unfocus();
+    final client = TimeoutClient(http.Client(), timeout: const Duration(minutes: 3));
+    _activeClient = client;
+
     setState(() {
       _isLoading = true;
     });
     _startLoadingTimer();
 
     try {
-      final resultText = await GeminiService.analyzeLegalSituation(
+      final result = await GeminiService.analyzeLegalSituation(
         _situation.trim(),
         _model,
+        client: client,
       );
+
+      if (_activeClient != client) {
+        return;
+      }
+
+      final resultText = result.text;
+      final actualModel = result.model;
 
       // Create format timestamp
       final now = DateTime.now();
@@ -277,15 +318,23 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
       final record = HistoryRecord(
         situation: _situation.trim(),
         timestamp: formattedTime,
-        selectedModel: _model,
+        selectedModel: actualModel,
         analysisResult: resultText,
+        promptTokens: result.promptTokens,
+        candidateTokens: result.candidateTokens,
+        totalTokens: result.totalTokens,
       );
 
       final newId = await DatabaseService.saveAnalysis(record);
 
+      if (_activeClient != client) {
+        return;
+      }
+
       _stopLoadingTimer();
       setState(() {
         _isLoading = false;
+        _activeClient = null;
       });
 
       // Navigate to results screen (replace current)
@@ -297,10 +346,19 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
           ),
         );
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      if (_activeClient != client) {
+        debugPrint('Ignoring error from cancelled/aborted request: $error');
+        return;
+      }
+
+      debugPrint('Error during analysis: $error');
+      debugPrint('Stacktrace: $stackTrace');
+
       _stopLoadingTimer();
       setState(() {
         _isLoading = false;
+        _activeClient = null;
       });
 
       String errorMsg =
@@ -311,8 +369,30 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
             'สิทธิ์การเข้าถึงถูกปฏิเสธ (403) คีย์ API ของคุณอาจไม่ถูกต้อง หรือไม่มีสิทธิ์เรียกใช้งานโมเดลนี้';
       } else if (errStr.contains('API_ERROR_404')) {
         errorMsg = 'ไม่พบโมเดลนี้ (404) กรุณาเข้าไปเลือกโมเดลอื่นในเมนูตั้งค่า';
+      } else if (errStr.contains('API_ERROR_503')) {
+        errorMsg = 'ขออภัย โมเดลนี้อาจกำลังมีผู้ใช้งานหนาแน่นชั่วคราว (503) กรุณาลองใหม่อีกครั้ง หรือเลือกใช้โมเดลอื่นที่มีเสถียรภาพ เช่น Gemini 1.5 Flash';
       } else if (errStr.contains('API_KEY_MISSING')) {
         errorMsg = 'ไม่พบ API Key กรุณากรอกคีย์ในเมนูตั้งค่า';
+      } else if (errStr.contains('SocketException') ||
+          errStr.contains('ClientException') ||
+          errStr.contains('HandshakeException') ||
+          errStr.contains('TimeoutException') ||
+          errStr.contains('NO_INTERNET')) {
+        errorMsg = 'ไม่สามารถเชื่อมต่ออินเทอร์เน็ตได้ กรุณาตรวจสอบการเชื่อมต่อเครือข่ายของท่านและลองใหม่อีกครั้ง';
+      } else if (errStr.contains('PROMPT_BLOCKED_SAFETY')) {
+        errorMsg = 'การวิเคราะห์ถูกปฏิเสธเนื่องจากเนื้อหาขัดต่อนโยบายความปลอดภัยทางข้อมูล (Safety Policy) กรุณาปรับเปลี่ยนข้อความของท่าน';
+      } else if (errStr.contains('CANDIDATE_BLOCKED')) {
+        errorMsg = 'ผลลัพธ์ถูกบล็อกโดยระบบความปลอดภัยของระบบ กรุณาปรับเปลี่ยนเนื้อหาให้สุภาพหรือหลีกเลี่ยงประเด็นอ่อนไหว';
+      } else if (errStr.contains('API_RESPONSE_ERROR')) {
+        final rawMsg = errStr.replaceFirst('Exception: API_RESPONSE_ERROR:', '').trim();
+        errorMsg = 'เกิดข้อผิดพลาดจาก API: $rawMsg';
+      } else if (errStr.contains('API_INVALID_RESPONSE_FORMAT')) {
+        errorMsg = 'รูปแบบข้อมูลที่ได้รับไม่ถูกต้อง (อาจเกิดจาก captive portal หรือเครือข่ายถูกจำกัด)';
+      } else if (errStr.contains('API_NO_CANDIDATES') ||
+          errStr.contains('CONTENT_MISSING') ||
+          errStr.contains('PARTS_MISSING') ||
+          errStr.contains('TEXT_MISSING')) {
+        errorMsg = 'ไม่พบผลลัพธ์การวิเคราะห์ตอบกลับจากระบบ ปัญญาประดิษฐ์';
       }
 
       if (mounted) {
@@ -597,7 +677,7 @@ class _NewAnalysisScreenState extends State<NewAnalysisScreen> {
                   ElevatedButton.icon(
                     onPressed: _situation.trim().isEmpty
                         ? null
-                        : _handleStartAnalysis,
+                        : _onAnalyzePressed,
                     icon: const Icon(
                       LucideIcons.scale,
                       size: 20,
