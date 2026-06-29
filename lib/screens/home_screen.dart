@@ -389,7 +389,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'ประวัติการวิเคราะห์ทั้งหมด: ${_history.length} รายการ',
+                    'ประวัติการวิเคราะห์ทั้งหมด: ${_history.length} รายการ\n',
                     style: TextStyle(color: textSecondary, fontSize: 13),
                   ),
                   if (_totalTokens > 0)
