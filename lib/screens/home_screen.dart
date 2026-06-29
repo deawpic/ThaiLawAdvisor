@@ -30,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _loadData() async {
     final records = DatabaseService.getAllHistory();
     final key = await StorageService.getApiKey();
-    
+
     int total = 0;
     for (var r in records) {
       total += r.totalTokens;
@@ -385,14 +385,15 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_history.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'ประวัติการวิเคราะห์ทั้งหมด: ${_history.length} รายการ\n',
+                    'ประวัติการวิเคราะห์ทั้งหมด: ${_history.length} รายการ',
                     style: TextStyle(color: textSecondary, fontSize: 13),
                   ),
-                  if (_totalTokens > 0)
+                  if (_totalTokens > 0) ...[
+                    const SizedBox(height: 4),
                     Text(
                       'ใช้โทเคนสะสม: $_totalTokens',
                       style: TextStyle(
@@ -401,6 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -530,7 +532,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: bgElement,
-                                          borderRadius: BorderRadius.circular(20),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
                                         ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
@@ -639,65 +643,90 @@ class _HomeScreenState extends State<HomeScreen> {
                                 // Footer
                                 const Divider(height: 1, thickness: 0.5),
                                 const SizedBox(height: 12),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Flexible(
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Flexible(
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                LucideIcons.calendar,
+                                                size: 12,
+                                                color: textSecondary,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  item.timestamp,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: textSecondary,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Flexible(
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                LucideIcons.sparkles,
+                                                size: 12,
+                                                color: primaryColor,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  item.selectedModel.replaceAll('gemini-', 'Gemini '),
+                                                  overflow: TextOverflow.ellipsis,
+                                                  maxLines: 1,
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: textSecondary,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Icon(
+                                                LucideIcons.chevron_right,
+                                                size: 16,
+                                                color: textSecondary,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (item.totalTokens > 0) ...[
+                                      const SizedBox(height: 6),
+                                      Row(
                                         children: [
                                           Icon(
-                                            LucideIcons.calendar,
+                                            LucideIcons.cpu,
                                             size: 12,
                                             color: textSecondary,
                                           ),
                                           const SizedBox(width: 4),
-                                          Flexible(
-                                            child: Text(
-                                              item.timestamp,
-                                              overflow: TextOverflow.ellipsis,
-                                              maxLines: 1,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: textSecondary,
-                                              ),
+                                          Text(
+                                            'โทเคน: ${item.totalTokens} tkn',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: textSecondary,
                                             ),
                                           ),
                                         ],
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            LucideIcons.sparkles,
-                                            size: 12,
-                                            color: primaryColor,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Flexible(
-                                            child: Text(
-                                              '${item.selectedModel.replaceAll('gemini-', 'Gemini ')}${item.totalTokens > 0 ? ' (${item.totalTokens} tkn)' : ''}',
-                                              overflow: TextOverflow.ellipsis,
-                                              maxLines: 1,
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: textSecondary,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Icon(
-                                            LucideIcons.chevron_right,
-                                            size: 16,
-                                            color: textSecondary,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               ],

@@ -482,7 +482,7 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen>
                           const Divider(height: 1, thickness: 0.5),
                           const SizedBox(height: 10),
                           Text(
-                            'วิเคราะห์เมื่อ: ${_record!.timestamp} | ด้วย ${_record!.selectedModel.replaceAll('gemini-', 'Gemini ')}${_record!.totalTokens > 0 ? ' | ใช้โทเคนทั้งหมด: ${_record!.totalTokens} (Input: ${_record!.promptTokens}, Output: ${_record!.candidateTokens})' : ''}',
+                            'วิเคราะห์เมื่อ: ${_record!.timestamp} | ด้วย ${_record!.selectedModel.replaceAll('gemini-', 'Gemini ')}${_record!.totalTokens > 0 ? '\nใช้โทเคนทั้งหมด: ${_record!.totalTokens} (Input: ${_record!.promptTokens}, Output: ${_record!.candidateTokens})' : ''}',
                             style: TextStyle(
                               fontSize: 11,
                               color: textSecondary,

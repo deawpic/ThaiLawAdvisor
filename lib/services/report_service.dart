@@ -3,226 +3,170 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:markdown/markdown.dart' as md;
 import 'package:printing/printing.dart';
 import '../models/history_record.dart';
 
 class ReportService {
-  static String _escapeHtml(String text) {
-    return text
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#x27;');
-  }
-
-  static Future<String?> _findChromeExecutable() async {
-    if (Platform.isLinux) {
-      final paths = [
-        'google-chrome',
-        'google-chrome-stable',
-        'chromium',
-        'chromium-browser',
-        '/usr/bin/google-chrome',
-        '/usr/bin/chromium',
-      ];
-      for (final path in paths) {
-        try {
-          final result = await Process.run('which', [path]);
-          if (result.exitCode == 0) {
-            return path;
-          }
-        } catch (_) {}
+  static List<pw.Widget> _parseMarkdownToPdfWidgets(String markdown, pw.Font regular, pw.Font bold) {
+    final List<pw.Widget> widgets = [];
+    final lines = markdown.split('\n');
+    
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) {
+        widgets.add(pw.SizedBox(height: 8));
+        continue;
       }
-    } else if (Platform.isWindows) {
-      final paths = [
-        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
-      ];
-      for (final path in paths) {
-        if (await File(path).exists()) {
-          return path;
-        }
+      
+      if (trimmed.startsWith('###')) {
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 6),
+            child: pw.Text(
+              trimmed.replaceFirst('###', '').trim(),
+              style: pw.TextStyle(font: bold, fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+        );
+      } else if (trimmed.startsWith('##')) {
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 8),
+            child: pw.Text(
+              trimmed.replaceFirst('##', '').trim(),
+              style: pw.TextStyle(font: bold, fontSize: 15, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+        );
+      } else if (trimmed.startsWith('#')) {
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.symmetric(vertical: 10),
+            child: pw.Text(
+              trimmed.replaceFirst('#', '').trim(),
+              style: pw.TextStyle(font: bold, fontSize: 17, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+        );
+      } else if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
+        final content = trimmed.substring(1).trim();
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(left: 12, bottom: 4),
+            child: pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('• ', style: pw.TextStyle(font: regular, fontSize: 12)),
+                pw.Expanded(
+                  child: _buildRichText(content, regular, bold, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else {
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 6),
+            child: _buildRichText(trimmed, regular, bold, fontSize: 12),
+          ),
+        );
       }
     }
-    return null;
+    return widgets;
   }
 
-  static Future<Uint8List> _convertHtmlToPdf(String htmlContent) async {
-    final chromePath = await _findChromeExecutable();
-    if (chromePath != null) {
-      try {
-        final tempDir = await getTemporaryDirectory();
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final htmlFile = File('${tempDir.path}/temp_$timestamp.html');
-        final pdfFile = File('${tempDir.path}/temp_$timestamp.pdf');
-        
-        await htmlFile.writeAsString(htmlContent, encoding: utf8);
-        
-        final result = await Process.run(chromePath, [
-          '--headless',
-          '--disable-gpu',
-          '--print-to-pdf=${pdfFile.path}',
-          htmlFile.path,
-        ]);
-        
-        if (result.exitCode == 0 && await pdfFile.exists()) {
-          final bytes = await pdfFile.readAsBytes();
-          // Clean up
-          await htmlFile.delete();
-          await pdfFile.delete();
-          return bytes;
-        } else {
-          debugPrint('Chrome PDF generation failed: ${result.stderr}');
-        }
-      } catch (e) {
-        debugPrint('Error running Chrome/Edge for PDF generation: $e');
-      }
+  static pw.Widget _buildRichText(String text, pw.Font regular, pw.Font bold, {double fontSize = 12}) {
+    final parts = text.split('**');
+    final List<pw.TextSpan> spans = [];
+    
+    for (int i = 0; i < parts.length; i++) {
+      final isBold = i % 2 == 1;
+      spans.add(
+        pw.TextSpan(
+          text: parts[i],
+          style: pw.TextStyle(
+            font: isBold ? bold : regular,
+            fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+      );
     }
     
-    // Fallback to Printing.convertHtml for other platforms
-    // ignore: deprecated_member_use
-    return await Printing.convertHtml(
-      html: htmlContent,
-      format: PdfPageFormat.a4,
+    return pw.RichText(
+      text: pw.TextSpan(
+        style: pw.TextStyle(font: regular, fontSize: fontSize, height: 1.4),
+        children: spans,
+      ),
     );
   }
 
+  static Future<Uint8List> generatePdfBytes(HistoryRecord record) async {
+    final doc = pw.Document();
+    
+    pw.Font regularFont;
+    pw.Font boldFont;
+    try {
+      regularFont = await PdfGoogleFonts.sarabunRegular();
+      boldFont = await PdfGoogleFonts.sarabunBold();
+    } catch (_) {
+      regularFont = pw.Font.helvetica();
+      boldFont = pw.Font.helveticaBold();
+    }
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (pw.Context context) {
+          return [
+            pw.Text(
+              'รายงานผลวิเคราะห์กฎหมายไทยโดย AI',
+              style: pw.TextStyle(font: boldFont, fontSize: 18, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Text(
+              'วิเคราะห์เมื่อ: ${record.timestamp}',
+              style: pw.TextStyle(font: regularFont, fontSize: 10),
+            ),
+            pw.Text(
+              'โมเดล AI: ${record.selectedModel}',
+              style: pw.TextStyle(font: regularFont, fontSize: 10),
+            ),
+            pw.SizedBox(height: 12),
+            pw.Divider(thickness: 0.5),
+            pw.SizedBox(height: 12),
+            
+            pw.Text(
+              'สถานการณ์ที่ส่งมาวิเคราะห์:',
+              style: pw.TextStyle(font: boldFont, fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              record.situation,
+              style: pw.TextStyle(font: regularFont, fontSize: 12, height: 1.4),
+            ),
+            pw.SizedBox(height: 16),
+            
+            pw.Text(
+              'ผลการวิเคราะห์ข้อกฎหมาย:',
+              style: pw.TextStyle(font: boldFont, fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.SizedBox(height: 6),
+            ..._parseMarkdownToPdfWidgets(record.analysisResult, regularFont, boldFont),
+          ];
+        },
+      ),
+    );
+
+    return doc.save();
+  }
+
   static Future<void> shareAsPdf(HistoryRecord record) async {
-    final escapedSituation = _escapeHtml(record.situation);
-    final escapedTimestamp = _escapeHtml(record.timestamp);
-    final escapedModel = _escapeHtml(record.selectedModel);
-    final htmlAnalysisResult = md.markdownToHtml(record.analysisResult);
-
-    final htmlContent = '''
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>รายงานผลวิเคราะห์กฎหมายไทยโดย AI</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,300;0,400;0,700;1,400&display=swap" rel="stylesheet">
-  <style>
-    @page {
-      size: A4;
-      margin: 20mm;
-    }
-    body {
-      font-family: 'Sarabun', 'Tahoma', 'Leelawadee', sans-serif;
-      margin: 0;
-      padding: 0;
-      color: #212121;
-      line-height: 1.6;
-      font-size: 14px;
-    }
-    .header {
-      border-bottom: 2px solid #1565C0;
-      padding-bottom: 12px;
-      margin-bottom: 20px;
-    }
-    h1 {
-      font-size: 24px;
-      color: #1565C0;
-      margin: 0 0 8px 0;
-      font-weight: 700;
-    }
-    .metadata {
-      font-size: 11px;
-      color: #616161;
-    }
-    .metadata-item {
-      margin-bottom: 4px;
-    }
-    .section-title {
-      font-size: 14px;
-      font-weight: 700;
-      color: #212121;
-      margin-top: 25px;
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .situation-container {
-      background-color: #F5F5F5;
-      border-left: 4px solid #42A5F5;
-      padding: 12px 16px;
-      margin-bottom: 25px;
-      border-radius: 4px;
-      white-space: pre-wrap;
-      font-size: 13px;
-      color: #424242;
-    }
-    .analysis-container {
-      font-size: 13px;
-      color: #212121;
-    }
-    .analysis-container h1 {
-      font-size: 18px;
-      color: #1565C0;
-      margin-top: 22px;
-      margin-bottom: 10px;
-      border-bottom: 1px solid #E0E0E0;
-      padding-bottom: 6px;
-      font-weight: 700;
-    }
-    .analysis-container h2 {
-      font-size: 15px;
-      color: #1976D2;
-      margin-top: 18px;
-      margin-bottom: 8px;
-      font-weight: 700;
-    }
-    .analysis-container h3 {
-      font-size: 13px;
-      color: #212121;
-      margin-top: 14px;
-      margin-bottom: 6px;
-      font-weight: 700;
-    }
-    .analysis-container p {
-      margin-top: 0;
-      margin-bottom: 10px;
-      text-align: justify;
-    }
-    .analysis-container ul, .analysis-container ol {
-      margin-top: 0;
-      margin-bottom: 10px;
-      padding-left: 24px;
-    }
-    .analysis-container li {
-      margin-bottom: 6px;
-    }
-    .analysis-container strong {
-      font-weight: 700;
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>รายงานผลวิเคราะห์กฎหมายไทยโดย AI</h1>
-    <div class="metadata">
-      <div class="metadata-item">วิเคราะห์เมื่อ: $escapedTimestamp</div>
-      <div class="metadata-item">โมเดล AI: $escapedModel</div>
-    </div>
-  </div>
-  
-  <div class="section-title">สถานการณ์ที่ส่งมาวิเคราะห์:</div>
-  <div class="situation-container">$escapedSituation</div>
-  
-  <div class="section-title">ผลการวิเคราะห์ข้อกฎหมาย:</div>
-  <div class="analysis-container">
-    $htmlAnalysisResult
-  </div>
-</body>
-</html>
-''';
-
-    final bytes = await _convertHtmlToPdf(htmlContent);
+    final bytes = await generatePdfBytes(record);
 
     if (Platform.isLinux || Platform.isWindows) {
       final String? selectedPath = await FilePicker.saveFile(
