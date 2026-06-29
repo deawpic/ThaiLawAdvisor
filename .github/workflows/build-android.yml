@@ -1,0 +1,46 @@
+name: Flutter Build Android (Split ABI)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Split APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the source code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Set up Java Environment (required for Android Gradle build)
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 3. Set up Flutter environment
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      # 4. Install project dependencies
+      - name: Install Dependencies
+        run: flutter pub get
+
+      # 5. Build the split APKs
+      - name: Build Split APKs
+        run: flutter build apk --release --split-per-abi
+
+      # 6. Upload the generated APKs as build artifacts
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: split-apks
+          path: build/app/outputs/flutter-apk/app-*-release.apk
